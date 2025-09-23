@@ -1,0 +1,123 @@
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+header h1 {
+  margin: 0 0 0.5rem;
+  font-size: 2.5rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  background: #fff;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+}
+
+.control label {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.control input[type='number'],
+.control input[type='text'] {
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  font-size: 1rem;
+}
+
+.control span {
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.controls button {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.controls button:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.controls button:not(:disabled):hover {
+  background: #1d4ed8;
+}
+
+.error {
+  color: #b91c1c;
+  margin: 1rem 0 0;
+}
+
+.loading {
+  margin: 1rem 0;
+  color: #2563eb;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0 1.5rem;
+}
+
+.metrics div {
+  background: #fff;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+.metric-label {
+  display: block;
+  font-size: 0.9rem;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+}
+
+.plots {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.plot {
+  background: #fff;
+  padding: 0.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+  min-height: 280px;
+}
+
+@media (max-width: 720px) {
+  .controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
