@@ -1,35 +1,34 @@
-# AeroStack
+# AeroSnack (FastAPI + React)
 
-AeroStack is a playground for exploring parametric NACA 4-digit airfoils with thin-airfoil theory and a vortex panel solver. The project ships with a FastAPI backend and a React + Plotly frontend.
+A fast, truthful-enough airfoil explorer:
+- Generate NACA 4-digit airfoils with cosine spacing
+- Thin-airfoil CL with zero-lift angle estimated from camber line
+- Constant-strength vortex panel Cp with Kutta condition
 
-## Getting started
+## Dev quickstart
 
 ### Backend
-
 ```bash
 cd server
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+python -m venv .venv && source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
 ### Frontend
-
 ```bash
 cd web
-npm install
+npm i
 npm run dev
 ```
+Open http://localhost:5173 and ensure API points to http://127.0.0.1:8000 (default).
 
-By default the frontend connects to `http://127.0.0.1:8000` for API calls. Override this by setting `VITE_API_BASE` before running the dev server.
+## Notes
+- Cp uses a simplified vortex-panel kernel; for sharp trailing edges it enforces a single Kutta equation between the last and first panels. For serious use, upgrade to a doublet/source formulation or a higher-order vortex panel with explicit TE control points.
+- Thin-airfoil integration maps a \(\theta\)-grid to chordwise x for a stable zero-lift estimate.
+- Geometry endpoint returns monotone x with separate upper/lower y for robust plotting.
 
-## Features
-
-- Cosine-spaced NACA 4-digit generator (geometry + camber line).
-- Thin-airfoil solver returning zero-lift angle and lift slope.
-- Constant-strength vortex panel solver (≤100 panels) for Cp distribution and circulation-derived lift.
-- Metrics for solver time, vortex vs. thin-airfoil lift error, and solver memory footprint.
-- DXF export for rib geometry with configurable chord and thickness scale.
-
-Future extensions include XFoil integration, caching of high-fidelity runs, and gradient-based optimization for bespoke target lift curves.
+## Roadmap
+- Export DXF of ribs, STL stack
+- Add XFoil subprocess baseline + caching
+- Optimization: match target Cl@alpha with gradient on (m,p,t)
