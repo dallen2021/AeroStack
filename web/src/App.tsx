@@ -1,26 +1,51 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import Plotly from 'plotly.js-dist-min'
+import './App.css'
 
 const API = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
 
 type PlotProps = {
   data: Plotly.Data[]
   layout: Partial<Plotly.Layout>
+  className?: string
+  style?: React.CSSProperties
 }
 
-function Plot({ data, layout }: PlotProps) {
-  const ref = React.useRef<HTMLDivElement>(null)
+function Plot({ data, layout, className, style }: PlotProps) {
+  const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!ref.current) return
-    Plotly.newPlot(ref.current, data, { ...layout, responsive: true })
-    const onResize = () => Plotly.Plots.resize(ref.current!)
-    window.addEventListener('resize', onResize)
+    const plotLayout: Partial<Plotly.Layout> = {
+      autosize: true,
+      ...layout,
+    }
+    const config: Partial<Plotly.Config> = {
+      responsive: true,
+      displaylogo: false,
+    }
+    Plotly.react(ref.current, data, plotLayout, config)
+    const handleResize = () => {
+      if (ref.current) Plotly.Plots.resize(ref.current)
+    }
+    window.addEventListener('resize', handleResize)
     return () => {
-      window.removeEventListener('resize', onResize)
-      Plotly.purge(ref.current!)
+      window.removeEventListener('resize', handleResize)
+      if (ref.current) Plotly.purge(ref.current)
     }
   }, [data, layout])
-  return <div ref={ref} />
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{ width: '100%', ...(style ?? {}) }}
+    />
+  )
 }
 
 type Airfoil = { x: number[]; yu: number[]; yl: number[] }
@@ -31,155 +56,383 @@ type Analysis = {
   surface: { s_mid: number[]; x_mid: number[]; y_mid: number[]; cp: number[] }
 }
 
+type AirfoilPreset = {
+  id: string
+  label: string
+  family: string
+  description: string
+  default_alpha: number
+  params: { digits?: string }
+  tags: string[]
+  metrics?: {
+    max_camber_pct: number
+    max_camber_x_pct: number
+    max_thickness_pct: number
+  }
+}
+
+const formatNumber = (value: number | null | undefined, digits = 3) => {
+  if (value == null || Number.isNaN(value)) return 'N/A'
+  return value.toFixed(digits)
+}
+
 export default function App() {
+  const [presets, setPresets] = useState<AirfoilPreset[]>([])
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null)
   const [digits, setDigits] = useState('2412')
   const [alpha, setAlpha] = useState(4)
   const [nPoints, setNPoints] = useState(200)
   const [panels, setPanels] = useState(120)
   const [airfoil, setAirfoil] = useState<Airfoil | null>(null)
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const fetchAirfoil = useCallback(async () => {
-    const res = await fetch(
-      `${API}/api/naca4?digits=${digits}&chord=1&n_points=${nPoints}`
-    )
+  const initialisedPresets = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    const loadPresets = async () => {
+      try {
+        const res = await fetch(`${API}/api/airfoils`)
+        if (!res.ok) throw new Error('Failed to load preset airfoils')
+        const json = await res.json()
+        if (!cancelled) setPresets(json.presets ?? [])
+      } catch (err) {
+        console.error(err)
+        if (!cancelled) setError((err as Error).message)
+      }
+    }
+    loadPresets()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const fetchPresetGeometry = useCallback(
+    async (presetId: string, opts: { syncAlpha?: boolean } = {}) => {
+      setError(null)
+      const params = new URLSearchParams({ chord: '1', n_points: String(nPoints) })
+      const res = await fetch(`${API}/api/airfoils/${presetId}?${params.toString()}`)
+      if (!res.ok) throw new Error('Failed to load preset geometry')
+      const json = await res.json()
+      const preset: AirfoilPreset = json.preset
+      const geometry = json.geometry
+      if (opts.syncAlpha !== false) setAlpha(preset.default_alpha)
+      setDigits(preset.params?.digits ?? '0000')
+      setAirfoil({ x: geometry.x, yu: geometry.yu, yl: geometry.yl })
+      setSelectedPreset(presetId)
+    },
+    [nPoints],
+  )
+
+  const fetchCustomAirfoil = useCallback(async () => {
+    setError(null)
+    if (digits.length !== 4) {
+      setAirfoil(null)
+      return
+    }
+    const params = new URLSearchParams({
+      digits,
+      chord: '1',
+      n_points: String(nPoints),
+    })
+    const res = await fetch(`${API}/api/naca4?${params.toString()}`)
+    if (!res.ok) throw new Error('Unable to generate NACA geometry')
     const json = await res.json()
     setAirfoil({ x: json.x, yu: json.yu, yl: json.yl })
   }, [digits, nPoints])
 
-  const runAnalysis = useCallback(async () => {
+  const computeAnalysis = useCallback(
+    async (airfoilShape: Airfoil) => {
+      setAnalysisLoading(true)
+      setError(null)
+      try {
+        const res = await fetch(`${API}/api/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            x: airfoilShape.x,
+            yu: airfoilShape.yu,
+            yl: airfoilShape.yl,
+            alpha_deg: alpha,
+            V_inf: 1.0,
+            panels,
+          }),
+        })
+        if (!res.ok) throw new Error('Analysis failed')
+        const json = await res.json()
+        setAnalysis(json)
+      } catch (err) {
+        console.error(err)
+        setError((err as Error).message)
+      } finally {
+        setAnalysisLoading(false)
+      }
+    },
+    [alpha, panels],
+  )
+
+  useEffect(() => {
+    if (!presets.length || initialisedPresets.current) return
+    const preferred = presets.find((preset) => preset.params?.digits === digits)
+    const target = preferred ?? presets[0]
+    initialisedPresets.current = true
+    fetchPresetGeometry(target.id).catch((err) => setError((err as Error).message))
+  }, [digits, fetchPresetGeometry, presets])
+
+  useEffect(() => {
     if (!airfoil) return
-    setLoading(true)
-    try {
-      const res = await fetch(`${API}/api/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          x: airfoil.x,
-          yu: airfoil.yu,
-          yl: airfoil.yl,
-          alpha_deg: alpha,
-          V_inf: 1.0,
-          panels,
-        }),
-      })
-      const json = await res.json()
-      setAnalysis(json)
-    } finally {
-      setLoading(false)
-    }
-  }, [airfoil, alpha, panels])
+    computeAnalysis(airfoil)
+  }, [airfoil, alpha, panels, computeAnalysis])
 
   useEffect(() => {
-    fetchAirfoil()
-  }, [fetchAirfoil])
+    if (!selectedPreset || selectedPreset === 'custom') return
+    fetchPresetGeometry(selectedPreset, { syncAlpha: false }).catch((err) =>
+      setError((err as Error).message),
+    )
+  }, [fetchPresetGeometry, nPoints, selectedPreset])
 
   useEffect(() => {
-    runAnalysis()
-  }, [runAnalysis])
+    if (selectedPreset !== 'custom') return
+    const handle = window.setTimeout(() => {
+      fetchCustomAirfoil().catch((err) => setError((err as Error).message))
+    }, 250)
+    return () => window.clearTimeout(handle)
+  }, [digits, fetchCustomAirfoil, selectedPreset])
+
+  useEffect(() => {
+    if (selectedPreset !== 'custom') return
+    fetchCustomAirfoil().catch((err) => setError((err as Error).message))
+  }, [fetchCustomAirfoil, nPoints, selectedPreset])
 
   const airfoilPlot = useMemo(() => {
     if (!airfoil) return null
+    const fillX = [...airfoil.x, ...airfoil.x.slice().reverse()]
+    const fillY = [...airfoil.yu, ...airfoil.yl.slice().reverse()]
     return {
       data: [
-        { x: airfoil.x, y: airfoil.yu, mode: 'lines', name: 'Upper' },
-        { x: airfoil.x, y: airfoil.yl, mode: 'lines', name: 'Lower' },
+        {
+          x: airfoil.x,
+          y: airfoil.yu,
+          mode: 'lines',
+          name: 'Upper surface',
+          line: { color: '#5ac8fa', width: 2 },
+        },
+        {
+          x: airfoil.x,
+          y: airfoil.yl,
+          mode: 'lines',
+          name: 'Lower surface',
+          line: { color: '#80d46b', width: 2 },
+        },
+        {
+          x: fillX,
+          y: fillY,
+          fill: 'toself',
+          mode: 'lines',
+          line: { width: 0 },
+          fillcolor: 'rgba(90, 200, 250, 0.08)',
+          hoverinfo: 'skip',
+          showlegend: false,
+        },
       ],
       layout: {
-        title: `NACA ${digits} geometry`,
-        xaxis: { title: 'x/c', range: [0, 1] },
-        yaxis: { title: 'y/c', scaleanchor: 'x' },
-        margin: { t: 40 },
-      },
+        title: `Airfoil geometry (${selectedPreset ?? 'custom'})`,
+        xaxis: { title: 'x/c', range: [-0.2, 1.2] },
+        yaxis: { title: 'y/c', scaleanchor: 'x', range: [-0.6, 0.6] },
+        margin: { t: 50, r: 20, b: 50, l: 60 },
+        paper_bgcolor: 'transparent',
+        plot_bgcolor: 'transparent',
+        legend: { orientation: 'h', x: 0, y: 1.1 },
+      } as Partial<Plotly.Layout>,
     }
-  }, [airfoil, digits])
+  }, [airfoil, selectedPreset])
 
   const cpPlot = useMemo(() => {
     if (!analysis) return null
-    const s = analysis.surface.s_mid
-    const cp = analysis.surface.cp
     return {
-      data: [{ x: s, y: cp, mode: 'lines+markers', name: 'Cp' }],
+      data: [
+        {
+          x: analysis.surface.s_mid,
+          y: analysis.surface.cp,
+          mode: 'lines+markers',
+          line: { color: '#f5a623', width: 2 },
+          marker: { size: 4 },
+          name: 'Cp',
+        },
+      ],
       layout: {
-        title: `Cp distribution @ α=${alpha.toFixed(2)}°`,
-        xaxis: { title: 's (arc length)' },
+        title: `Surface Cp @ alpha = ${alpha.toFixed(2)} deg`,
+        xaxis: { title: 'Arc length (s)' },
         yaxis: { title: 'Cp', autorange: 'reversed' },
-        margin: { t: 40 },
-      },
+        margin: { t: 50, r: 20, b: 50, l: 60 },
+        paper_bgcolor: 'transparent',
+        plot_bgcolor: 'transparent',
+      } as Partial<Plotly.Layout>,
     }
   }, [analysis, alpha])
 
+  const activePreset = useMemo(
+    () => presets.find((preset) => preset.id === selectedPreset) ?? null,
+    [presets, selectedPreset],
+  )
+
+  const metrics = activePreset?.metrics
+
+  const onSelectPreset = (presetId: string) => {
+    fetchPresetGeometry(presetId).catch((err) => setError((err as Error).message))
+  }
+
   return (
-    <div className="grid">
-      <div className="panel">
-        <h2>AeroSnack</h2>
-        <p>Parametric airfoil explorer with thin-airfoil & vortex panel analysis.</p>
-
-        <label>NACA 4-digit</label>
-        <input
-          value={digits}
-          onChange={(e) => setDigits(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
-        />
-
-        <div className="row">
-          <div>
-            <label>α (deg)</label>
-            <input
-              type="number"
-              value={alpha}
-              step={0.5}
-              onChange={(e) => setAlpha(parseFloat(e.target.value))}
-            />
-          </div>
-          <div>
-            <label>Points (geometry)</label>
-            <input
-              type="number"
-              value={nPoints}
-              min={50}
-              max={600}
-              onChange={(e) => setNPoints(parseInt(e.target.value || '200'))}
-            />
-          </div>
+    <div className="app">
+      <header className="hero">
+        <div>
+          <h1>AeroStack Studio</h1>
+          <p className="subtitle">
+            Explore curated NACA profiles and run panel analysis with a streamlined interface.
+          </p>
         </div>
-        <div className="row">
-          <div>
-            <label>Panels (solver)</label>
-            <input
-              type="number"
-              value={panels}
-              min={40}
-              max={300}
-              onChange={(e) => setPanels(parseInt(e.target.value || '120'))}
-            />
-          </div>
-          <div>
-            <label>CL (thin-airfoil)</label>
-            <input value={analysis?.cl_thin_airfoil?.toFixed(3) ?? ''} readOnly />
-          </div>
-        </div>
+        <div className="hero-badge">beta</div>
+      </header>
 
-        <div style={{ marginTop: 12 }}>
-          <button onClick={fetchAirfoil}>Regenerate airfoil</button>
-          <button onClick={runAnalysis} style={{ marginLeft: 8 }} disabled={loading}>
-            {loading ? 'Analyzing…' : 'Re-run analysis'}
-          </button>
-        </div>
+      <div className="body">
+        <aside className="sidebar">
+          <section className="card">
+            <h2>Preset library</h2>
+            <p className="card-hint">Click an airfoil to load its geometry and recommended angle of attack.</p>
+            <div className="preset-list">
+              {presets.map((preset) => (
+                <button
+                  key={preset.id}
+                  className={
+                    'preset-card' + (preset.id === selectedPreset ? ' preset-card--active' : '')
+                  }
+                  onClick={() => onSelectPreset(preset.id)}
+                >
+                  <div className="preset-card__title">{preset.label}</div>
+                  <div className="preset-card__tags">
+                    {preset.tags.map((tag) => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </div>
+                  <p>{preset.description}</p>
+                </button>
+              ))}
+            </div>
+          </section>
 
-        <div className="legend">
-          Cp plot uses a simple constant-strength vortex panel method with a Kutta condition.
-          Thin-airfoil CL uses a zero-lift α estimated from the camber line.
-        </div>
-        <div className="footer">API: {API}</div>
-      </div>
-      <div className="plot">
-        {airfoilPlot && <Plot data={airfoilPlot.data} layout={airfoilPlot.layout} />}
-        {cpPlot && (
-          <div style={{ marginTop: 16 }}>
-            <Plot data={cpPlot.data} layout={cpPlot.layout} />
-          </div>
-        )}
+          <section className="card">
+            <h2>Custom NACA</h2>
+            <label className="field">
+              <span>NACA 4-digit code</span>
+              <input
+                value={digits}
+                maxLength={4}
+                onChange={(event) => {
+                  const value = event.target.value.replace(/[^0-9]/g, '')
+                  setDigits(value)
+                  setSelectedPreset('custom')
+                }}
+              />
+            </label>
+            <div className="field-row">
+              <label className="field">
+                <span>Points on surface</span>
+                <input
+                  type="number"
+                  value={nPoints}
+                  min={60}
+                  max={800}
+                  onChange={(event) => setNPoints(parseInt(event.target.value || '200', 10))}
+                />
+              </label>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setSelectedPreset('custom')
+                  fetchCustomAirfoil().catch((err) => setError((err as Error).message))
+                }}
+                disabled={digits.length !== 4}
+              >
+                Generate
+              </button>
+            </div>
+          </section>
+
+          <section className="card">
+            <h2>Analysis setup</h2>
+            <div className="field-row">
+              <label className="field">
+                <span>Angle of attack (deg)</span>
+                <input
+                  type="number"
+                  value={alpha}
+                  step={0.5}
+                  onChange={(event) => setAlpha(parseFloat(event.target.value))}
+                />
+              </label>
+              <label className="field">
+                <span>Panels</span>
+                <input
+                  type="number"
+                  value={panels}
+                  min={40}
+                  max={320}
+                  onChange={(event) => setPanels(parseInt(event.target.value || '120', 10))}
+                />
+              </label>
+            </div>
+            <div className="metrics">
+              <div>
+                <span>CL (thin airfoil)</span>
+                <strong>{formatNumber(analysis?.cl_thin_airfoil)}</strong>
+              </div>
+            </div>
+            {metrics && (
+              <div className="metrics">
+                <div>
+                  <span>Max camber %</span>
+                  <strong>{metrics.max_camber_pct}</strong>
+                </div>
+                <div>
+                  <span>Camber position %</span>
+                  <strong>{metrics.max_camber_x_pct}</strong>
+                </div>
+                <div>
+                  <span>Thickness %</span>
+                  <strong>{metrics.max_thickness_pct}</strong>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {error && <div className="card card--error">{error}</div>}
+        </aside>
+
+        <main className="content">
+          <section className="panel">
+            <header className="panel__header">
+              <div>
+                <h2>Geometry</h2>
+                <p>Surface reconstruction plotted with matched upper and lower traces.</p>
+              </div>
+              <div className="status-chip">{analysisLoading ? 'solving...' : 'ready'}</div>
+            </header>
+            {airfoilPlot && <Plot data={airfoilPlot.data} layout={airfoilPlot.layout} className="plot" />}
+          </section>
+
+          <section className="panel">
+            <header className="panel__header">
+              <div>
+                <h2>Pressure coefficient</h2>
+                <p>Constant-strength vortex panel solution evaluated along the unified surface arc.</p>
+              </div>
+              <div className="status-chip">{analysisLoading ? 'updating...' : 'fresh'}</div>
+            </header>
+            {cpPlot && <Plot data={cpPlot.data} layout={cpPlot.layout} className="plot" />}
+          </section>
+        </main>
       </div>
     </div>
   )

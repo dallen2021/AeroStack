@@ -1,8 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
-import numpy as np
 from typing import Dict, List, Tuple
+
+import numpy as np
 
 from .naca import naca4_airfoil
 
@@ -60,6 +61,33 @@ PRESET_AIRFOILS: Tuple[AirfoilPreset, ...] = (
         tags=("symmetric", "benchmark"),
     ),
     AirfoilPreset(
+        id="naca-0018",
+        label="NACA 0018",
+        family="naca4",
+        description="Thick symmetric profile useful for vertical tails and flying wings.",
+        default_alpha=4.0,
+        params={"digits": "0018"},
+        tags=("symmetric", "thick"),
+    ),
+    AirfoilPreset(
+        id="naca-1408",
+        label="NACA 1408",
+        family="naca4",
+        description="Lightly cambered thin section for sailplanes and low-Reynolds applications.",
+        default_alpha=3.0,
+        params={"digits": "1408"},
+        tags=("glider", "low-Re"),
+    ),
+    AirfoilPreset(
+        id="naca-2309",
+        label="NACA 2309",
+        family="naca4",
+        description="Classic mild-camber wing section suited for trainers and UAVs.",
+        default_alpha=3.5,
+        params={"digits": "2309"},
+        tags=("trainer", "balanced"),
+    ),
+    AirfoilPreset(
         id="naca-2412",
         label="NACA 2412",
         family="naca4",
@@ -67,6 +95,15 @@ PRESET_AIRFOILS: Tuple[AirfoilPreset, ...] = (
         default_alpha=4.0,
         params={"digits": "2412"},
         tags=("general-aviation", "cambered"),
+    ),
+    AirfoilPreset(
+        id="naca-3415",
+        label="NACA 3415",
+        family="naca4",
+        description="High-camber wing section prioritizing maximum lift at low speeds.",
+        default_alpha=2.5,
+        params={"digits": "3415"},
+        tags=("short-takeoff", "high-lift"),
     ),
     AirfoilPreset(
         id="naca-4412",
@@ -87,6 +124,15 @@ PRESET_AIRFOILS: Tuple[AirfoilPreset, ...] = (
         tags=("high-lift", "thick"),
     ),
     AirfoilPreset(
+        id="naca-6312",
+        label="NACA 6312",
+        family="naca4",
+        description="Laminar-friendly section with camber pushed forward for smoother flow.",
+        default_alpha=1.5,
+        params={"digits": "6312"},
+        tags=("laminar", "forward-camber"),
+    ),
+    AirfoilPreset(
         id="naca-6409",
         label="NACA 6409",
         family="naca4",
@@ -96,13 +142,13 @@ PRESET_AIRFOILS: Tuple[AirfoilPreset, ...] = (
         tags=("laminar", "forward-camber"),
     ),
     AirfoilPreset(
-        id="naca-0018",
-        label="NACA 0018",
+        id="naca-9306",
+        label="NACA 9306",
         family="naca4",
-        description="Thick symmetric profile useful for vertical tails and flying wings.",
-        default_alpha=4.0,
-        params={"digits": "0018"},
-        tags=("symmetric", "thick"),
+        description="Extreme camber concept showcasing aggressive low-speed performance.",
+        default_alpha=0.0,
+        params={"digits": "9306"},
+        tags=("concept", "experimental"),
     ),
 )
 
@@ -142,3 +188,4 @@ def generate_preset_airfoil(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     preset = get_preset(preset_id)
     return generate_airfoil(preset.family, chord, n_points, **preset.params)
+
