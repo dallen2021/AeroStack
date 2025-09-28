@@ -8,7 +8,7 @@ from solvers.thin_airfoil import thin_airfoil_CL
 from solvers.vortex_panel import vortex_panel_cp
 from airfoils.naca import naca4_airfoil
 
-app = FastAPI(title="AeroSnack API", version="1.0")
+app = FastAPI(title="AeroStack API", version="1.0")
 
 app.add_middleware(
     CORSMiddleware,
