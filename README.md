@@ -1,4 +1,4 @@
-# AeroSnack (FastAPI + React)
+# AeroStack (FastAPI + React)
 
 A fast, truthful-enough airfoil explorer:
 - Generate NACA 4-digit airfoils with cosine spacing
